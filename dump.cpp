@@ -1,19 +1,11 @@
-#include <stdio.h>
 #include <memory>
-#include <sys/sysctl.h>
-#include <libproc.h>
-#include <string>
-#include <vector>
-#include <mach/mach.h>
-#include <mach/mach_vm.h>
-#include <mach/vm_map.h>
-#include <dlfcn.h>
-#include <unistd.h>
-#include <stdlib.h>
 #include <fstream>
 #include <sstream>
-#include <tuple>
-#include <memory>
+#include <unistd.h>
+#include <libproc.h>
+#include <mach/mach.h>
+#include <sys/sysctl.h>
+#include <mach/mach_vm.h>
 
 // global kernel return result
 kern_return_t kr;
