@@ -1,4 +1,5 @@
 *.dSYM
-read
 .DS_Store
 .vscode
+*.webp
+dump
