@@ -10,7 +10,8 @@
 #include <dlfcn.h>
 #include <unistd.h>
 #include <stdlib.h>
-
+#include <fstream>
+#include <sstream>
 
 pid_t get_pid_from_name(const std::string& name) {
     size_t sz; 
@@ -62,11 +63,10 @@ std::string share_mode(unsigned char sm) {
 }
 
 int main(int argc, char** argv) {
-    if (getuid() != 0) {
+    if (geteuid() != 0) {
         fprintf(stderr, "this program need root priv.. x)\n");
         return 1;
     }
-    // 1. get katalk pid
     pid_t kakaotalk_pid = get_pid_from_name("KakaoTalk");
     if (kakaotalk_pid == 0) {
         perror("Can't found Kakaotalk");
@@ -77,44 +77,62 @@ int main(int argc, char** argv) {
 
     kern_return_t kr;
 
-    // 2. get task handle
     mach_port_t task;
     kr = task_for_pid(mach_task_self(), kakaotalk_pid, &task);
     if (kr != KERN_SUCCESS) {
-        fprintf(stderr, "[task_for_pid] failed : %s", mach_error_string(kr));
+        fprintf(stderr, "[task_for_pid] failed : %s\n", mach_error_string(kr));
         return 1;
     }
 
-    // 3. show mmap
-    vm_address_t address = 0;
+    vm_size_t max_size = 0; 
     vm_size_t size;
     vm_region_submap_info_data_64_t info;
     mach_port_t obj;
     mach_msg_type_number_t cnt = VM_REGION_SUBMAP_INFO_COUNT_64;
     natural_t depth = 30;
 
-    printf("       START-END             PRT/MAX    SHARE           REGION DETAIL\n");
-    while (true) {
+    int riff_magic = 0x46464952;
+    int webp_magic = 0x50424557;
+    char * dump = new char[0x8000];
+
+    for (vm_address_t address = 0; true ; address += size) {
         kr = vm_region_recurse_64(task, &address, &size, &depth, (vm_region_info_t)&info, &cnt);
         if (kr != KERN_SUCCESS) {
-            fprintf(stderr, "[vm_region_recurse_64] failed : %s", mach_error_string(kr));
+            fprintf(stderr, "[vm_region_recurse_64] failed : %s\n", mach_error_string(kr));
             break;
         }
+        if ((info.protection & VM_PROT_READ) && !(info.protection & VM_PROT_EXECUTE) && (info.protection & SM_PRIVATE)) {
+            size_t rdbytes = 0;
+            while (rdbytes < size) {
+                mach_vm_size_t _rdbytes;
+                kr = mach_vm_read_overwrite(task, address + rdbytes, 0x8000, (mach_vm_address_t)dump, &_rdbytes);
+                if (kr != KERN_SUCCESS) {
+                    break;
+                }
 
+                for (auto offset = 0ul ; offset + 8 < _rdbytes; offset += 4) {
+                    int cur = *((int*)(dump + offset));
+                    if (cur == riff_magic) {
+                        int next = *((int*)(dump + offset + 8));
+                        if (next == webp_magic) {
+                            int sz = *((int*)(dump + offset + 4)) + 12;
+                            if (sz <= 12) continue;
 
-        char filename[2048];
-        proc_regionfilename(kakaotalk_pid, address, filename, sizeof(filename));
-        printf(
-            "%012lx-%012lx    %s/%s    %-12s    %s\n", 
-            address, 
-            address + size, 
-            rwx(info.protection).c_str(), 
-            rwx(info.max_protection).c_str(),
-            share_mode(info.share_mode).c_str(),
-            filename
-        );
-        address += size;
+                            char* webp_dump = new char[sz];
+                            mach_vm_size_t dummy;
+                            kr = mach_vm_read_overwrite(task, address + rdbytes + offset, sz, (mach_vm_address_t)webp_dump, &dummy);
+                            if (kr != KERN_SUCCESS) continue;
+                            
+                            // dump
+                            printf("[!] dumping..... on %012lx\n", address + rdbytes + offset);
+                            std::ostringstream filename; filename << std::hex << address + rdbytes + offset << ".webp"; 
+                            std::ofstream webp(filename.str(), std::ios_base::binary);
+                            webp.write(webp_dump, sz);
+                        }
+                    }
+                }
+                rdbytes += _rdbytes;            
+            }
+        }
     }
-
-
 }

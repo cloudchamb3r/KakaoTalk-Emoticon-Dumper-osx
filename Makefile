@@ -1,2 +1,2 @@
 ALL:
-	clang++ -std=c++17 -g read.cpp -o read
+	clang++ -std=c++17 -g dump.cpp -o dump

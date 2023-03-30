@@ -1,4 +1,4 @@
 *.dSYM
 read
-_DS_Store
+.DS_Store
 .vscode
